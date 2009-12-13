@@ -10,7 +10,7 @@ module ThinkingSphinx
     end
       
     def self.detect(model)
-      case model.connection.class.name
+      case model.connection.class.name == "MultiDb::ConnectionProxy" ? model.connection.master.connection.class.name : model.connection.class.name 
       when "ActiveRecord::ConnectionAdapters::MysqlAdapter",
            "ActiveRecord::ConnectionAdapters::MysqlplusAdapter",
            "ActiveRecord::ConnectionAdapters::Mysql2Adapter"

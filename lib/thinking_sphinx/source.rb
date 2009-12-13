@@ -83,8 +83,13 @@ module ThinkingSphinx
     end
     
     def set_source_database_settings(source)
-      config = @database_configuration
-      
+
+      if @model.connection.class.to_s == "MultiDb::ConnectionProxy"
+        config = @model.connection.master.connection.instance_variable_get(:@config)
+      else
+        config = @model.connection.instance_variable_get(:@config)
+      end
+
       source.sql_host = config[:host]           || "localhost"
       source.sql_user = config[:username]       || config[:user] || 'root'
       source.sql_pass = (config[:password].to_s || "").gsub('#', '\#')
