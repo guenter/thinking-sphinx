@@ -196,6 +196,7 @@ module ThinkingSphinx
       end
       
       def insert_sphinx_index(index)
+	self.sphinx_indexes ||= []
         self.sphinx_indexes << index
         subclasses.each { |klass| klass.insert_sphinx_index(index) }
       end

@@ -20,9 +20,13 @@ module ThinkingSphinx
       @groupings    = []
       @options      = options
       @associations = {}
-      @database_configuration = @model.connection.
-        instance_variable_get(:@config).clone
       
+      if @model.connection.class.to_s == "MultiDb::ConnectionProxy"
+        @database_configuration = @model.connection.master.connection.instance_variable_get(:@config)
+      else
+        @database_configuration = @model.connection.instance_variable_get(:@config)
+      end
+
       @base = ::ActiveRecord::Associations::ClassMethods::JoinDependency.new(
         @model, [], nil
       )
@@ -83,13 +87,10 @@ module ThinkingSphinx
     end
     
     def set_source_database_settings(source)
+ 
+      config = @database_configuration
 
-      if @model.connection.class.to_s == "MultiDb::ConnectionProxy"
-        config = @model.connection.master.connection.instance_variable_get(:@config)
-      else
-        config = @model.connection.instance_variable_get(:@config)
-      end
-
+      
       source.sql_host = config[:host]           || "localhost"
       source.sql_user = config[:username]       || config[:user] || 'root'
       source.sql_pass = (config[:password].to_s || "").gsub('#', '\#')
