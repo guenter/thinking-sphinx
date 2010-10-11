@@ -785,9 +785,10 @@ describe ThinkingSphinx::Search do
         end
       
         it "should set up the excerpter with the instances and search" do
-          ThinkingSphinx::Excerpter.should_receive(:new).with(@search, @alpha_a)
-          ThinkingSphinx::Excerpter.should_receive(:new).with(@search, @alpha_b)
-        
+          [@alpha_a, @beta_b, @alpha_b, @beta_a].each do |object|
+            ThinkingSphinx::Excerpter.should_receive(:new).with(@search, object)
+          end
+          
           @search.first
         end
       end
@@ -820,11 +821,6 @@ describe ThinkingSphinx::Search do
         it "should add matching_fields method if using fieldmask ranking mode" do
           search = ThinkingSphinx::Search.new :rank_mode => :fieldmask
           search.first.should respond_to(:matching_fields)
-        end
-        
-        it "should not add matching_fields method if using a different ranking mode" do
-          search = ThinkingSphinx::Search.new :rank_mode => :bm25
-          search.first.should_not respond_to(:matching_fields)
         end
         
         it "should not add matching_fields method if object already have one" do
@@ -1112,6 +1108,15 @@ describe ThinkingSphinx::Search do
       @search.excerpt_for('string')
     end
     
+    it "should respect the provided index option" do
+      @search = ThinkingSphinx::Search.new(:classes => [Alpha], :index => 'foo')
+      @client.should_receive(:excerpts) do |options|
+        options[:index].should == 'foo'
+      end
+      
+      @search.excerpt_for('string')
+    end
+    
     it "should optionally take a second argument to allow for multi-model searches" do
       @client.should_receive(:excerpts) do |options|
         options[:index].should == 'beta_core'
@@ -1195,6 +1200,19 @@ describe ThinkingSphinx::Search do
     
     it "should return the Search object" do
       @search.freeze.should be_a(ThinkingSphinx::Search)
+    end
+  end
+  
+  describe '#client' do
+    let(:client) { Riddle::Client.new }
+    it "should respect the client in options" do
+      search = ThinkingSphinx::Search.new :client => client
+      search.client.should == client
+    end
+    
+    it "should get a new client from the configuration singleton by default" do
+      ThinkingSphinx::Configuration.instance.stub!(:client => client)
+      ThinkingSphinx::Search.new.client.should == client
     end
   end
 end

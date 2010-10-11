@@ -5,11 +5,11 @@
 
 Gem::Specification.new do |s|
   s.name = %q{thinking-sphinx}
-  s.version = "1.3.18"
+  s.version = "1.3.20"
 
   s.required_rubygems_version = Gem::Requirement.new(">= 0") if s.respond_to? :required_rubygems_version=
   s.authors = ["Pat Allan"]
-  s.date = %q{2010-06-29}
+  s.date = %q{2010-09-03}
   s.description = %q{A concise and easy-to-use Ruby library that connects ActiveRecord to the Sphinx search daemon, managing configuration, indexing and searching.}
   s.email = %q{pat@freelancing-gods.com}
   s.extra_rdoc_files = [
@@ -34,6 +34,7 @@ Gem::Specification.new do |s|
      "lib/thinking_sphinx/association.rb",
      "lib/thinking_sphinx/attribute.rb",
      "lib/thinking_sphinx/auto_version.rb",
+     "lib/thinking_sphinx/bundled_search.rb",
      "lib/thinking_sphinx/class_facet.rb",
      "lib/thinking_sphinx/configuration.rb",
      "lib/thinking_sphinx/context.rb",
@@ -74,26 +75,7 @@ http://freelancing-god.github.com/ts/en/upgrading.html
   s.rubygems_version = %q{1.3.7}
   s.summary = %q{ActiveRecord/Rails Sphinx library}
   s.test_files = [
-    "features/abstract_inheritance.feature",
-     "features/alternate_primary_key.feature",
-     "features/attribute_transformation.feature",
-     "features/attribute_updates.feature",
-     "features/deleting_instances.feature",
-     "features/direct_attributes.feature",
-     "features/excerpts.feature",
-     "features/extensible_delta_indexing.feature",
-     "features/facets.feature",
-     "features/facets_across_model.feature",
-     "features/handling_edits.feature",
-     "features/retry_stale_indexes.feature",
-     "features/searching_across_models.feature",
-     "features/searching_by_index.feature",
-     "features/searching_by_model.feature",
-     "features/searching_with_find_arguments.feature",
-     "features/sphinx_detection.feature",
-     "features/sphinx_scopes.feature",
-     "features/step_definitions",
-     "features/step_definitions/alpha_steps.rb",
+    "features/step_definitions/alpha_steps.rb",
      "features/step_definitions/beta_steps.rb",
      "features/step_definitions/common_steps.rb",
      "features/step_definitions/extensible_delta_indexing_steps.rb",
@@ -103,16 +85,8 @@ http://freelancing-god.github.com/ts/en/upgrading.html
      "features/step_definitions/scope_steps.rb",
      "features/step_definitions/search_steps.rb",
      "features/step_definitions/sphinx_steps.rb",
-     "features/sti_searching.feature",
-     "features/support",
      "features/support/env.rb",
-     "features/support/lib",
      "features/support/lib/generic_delta_handler.rb",
-     "features/thinking_sphinx",
-     "features/thinking_sphinx/database.example.yml",
-     "features/thinking_sphinx/database.yml",
-     "features/thinking_sphinx/db",
-     "features/thinking_sphinx/db/fixtures",
      "features/thinking_sphinx/db/fixtures/alphas.rb",
      "features/thinking_sphinx/db/fixtures/authors.rb",
      "features/thinking_sphinx/db/fixtures/betas.rb",
@@ -130,7 +104,6 @@ http://freelancing-god.github.com/ts/en/upgrading.html
      "features/thinking_sphinx/db/fixtures/posts.rb",
      "features/thinking_sphinx/db/fixtures/robots.rb",
      "features/thinking_sphinx/db/fixtures/tags.rb",
-     "features/thinking_sphinx/db/migrations",
      "features/thinking_sphinx/db/migrations/create_alphas.rb",
      "features/thinking_sphinx/db/migrations/create_animals.rb",
      "features/thinking_sphinx/db/migrations/create_authors.rb",
@@ -149,7 +122,6 @@ http://freelancing-god.github.com/ts/en/upgrading.html
      "features/thinking_sphinx/db/migrations/create_robots.rb",
      "features/thinking_sphinx/db/migrations/create_taggings.rb",
      "features/thinking_sphinx/db/migrations/create_tags.rb",
-     "features/thinking_sphinx/models",
      "features/thinking_sphinx/models/alpha.rb",
      "features/thinking_sphinx/models/animal.rb",
      "features/thinking_sphinx/models/author.rb",
@@ -171,6 +143,26 @@ http://freelancing-god.github.com/ts/en/upgrading.html
      "features/thinking_sphinx/models/robot.rb",
      "features/thinking_sphinx/models/tag.rb",
      "features/thinking_sphinx/models/tagging.rb",
+     "features/abstract_inheritance.feature",
+     "features/alternate_primary_key.feature",
+     "features/attribute_transformation.feature",
+     "features/attribute_updates.feature",
+     "features/deleting_instances.feature",
+     "features/direct_attributes.feature",
+     "features/excerpts.feature",
+     "features/extensible_delta_indexing.feature",
+     "features/facets.feature",
+     "features/facets_across_model.feature",
+     "features/handling_edits.feature",
+     "features/retry_stale_indexes.feature",
+     "features/searching_across_models.feature",
+     "features/searching_by_index.feature",
+     "features/searching_by_model.feature",
+     "features/searching_with_find_arguments.feature",
+     "features/sphinx_detection.feature",
+     "features/sphinx_scopes.feature",
+     "features/sti_searching.feature",
+     "features/thinking_sphinx/database.example.yml",
      "spec/thinking_sphinx/active_record/delta_spec.rb",
      "spec/thinking_sphinx/active_record/has_many_association_spec.rb",
      "spec/thinking_sphinx/active_record/scopes_spec.rb",
@@ -193,6 +185,7 @@ http://freelancing-god.github.com/ts/en/upgrading.html
      "spec/thinking_sphinx/search_methods_spec.rb",
      "spec/thinking_sphinx/search_spec.rb",
      "spec/thinking_sphinx/source_spec.rb",
+     "spec/thinking_sphinx/test_spec.rb",
      "spec/thinking_sphinx_spec.rb"
   ]
 
@@ -201,7 +194,7 @@ http://freelancing-god.github.com/ts/en/upgrading.html
     s.specification_version = 3
 
     if Gem::Version.new(Gem::VERSION) >= Gem::Version.new('1.2.0') then
-      s.add_runtime_dependency(%q<activerecord>, [">= 1.15.6"])
+      s.add_runtime_dependency(%q<activerecord>, [">= 1.15.6", "< 3.0.0"])
       s.add_runtime_dependency(%q<riddle>, [">= 1.0.10"])
       s.add_runtime_dependency(%q<after_commit>, [">= 1.0.6"])
       s.add_development_dependency(%q<yard>, [">= 0"])
@@ -211,7 +204,7 @@ http://freelancing-god.github.com/ts/en/upgrading.html
       s.add_development_dependency(%q<ginger>, ["= 1.2.0"])
       s.add_development_dependency(%q<faker>, ["= 0.3.1"])
     else
-      s.add_dependency(%q<activerecord>, [">= 1.15.6"])
+      s.add_dependency(%q<activerecord>, [">= 1.15.6", "< 3.0.0"])
       s.add_dependency(%q<riddle>, [">= 1.0.10"])
       s.add_dependency(%q<after_commit>, [">= 1.0.6"])
       s.add_dependency(%q<yard>, [">= 0"])
@@ -222,7 +215,7 @@ http://freelancing-god.github.com/ts/en/upgrading.html
       s.add_dependency(%q<faker>, ["= 0.3.1"])
     end
   else
-    s.add_dependency(%q<activerecord>, [">= 1.15.6"])
+    s.add_dependency(%q<activerecord>, [">= 1.15.6", "< 3.0.0"])
     s.add_dependency(%q<riddle>, [">= 1.0.10"])
     s.add_dependency(%q<after_commit>, [">= 1.0.6"])
     s.add_dependency(%q<yard>, [">= 0"])
