@@ -52,6 +52,38 @@ describe ThinkingSphinx::Search do
     end
   end
   
+  describe '#error?' do
+    before :each do
+      @search = ThinkingSphinx::Search.new
+    end
+    
+    it "should be false if client requests have not resulted in an error" do
+      @search.should_receive(:error).and_return(nil)
+      @search.error?.should_not be_true
+    end
+    
+    it "should be true when client requests result in an error" do
+      @search.should_receive(:error).and_return("error message")
+      @search.error?.should be_true
+    end
+  end
+  
+  describe '#warning?' do
+    before :each do
+      @search = ThinkingSphinx::Search.new
+    end
+    
+    it "should be false if client requests have not resulted in a warning" do
+      @search.should_receive(:warning).and_return(nil)
+      @search.warning?.should_not be_true
+    end
+    
+    it "should be true when client requests result in an error" do
+      @search.should_receive(:warning).and_return("warning message")
+      @search.warning?.should be_true
+    end
+  end
+  
   describe '#results' do
     it "should populate search results before returning" do
       @search = ThinkingSphinx::Search.new
@@ -218,6 +250,74 @@ describe ThinkingSphinx::Search do
       ThinkingSphinx::Search.new(:classes => [Alpha, Beta]).first
     end
     
+    it "should restrict includes to the relevant classes" do
+      Alpha.should_receive(:find) do |type, options|
+        options[:include].should == [:betas]
+        [@alpha_a, @alpha_b]
+      end
+      
+      Beta.should_receive(:find) do |type, options|
+        options[:include].should == [:gammas]
+        [@beta_a, @beta_b]
+      end
+      
+      ThinkingSphinx::Search.new(:include => [:betas, :gammas]).first
+    end
+    
+    it "should restrict single includes to the relevant classes" do
+      Alpha.should_receive(:find) do |type, options|
+        options[:include].should == :betas
+        [@alpha_a, @alpha_b]
+      end
+      
+      Beta.should_receive(:find) do |type, options|
+        options[:include].should be_nil
+        [@beta_a, @beta_b]
+      end
+      
+      ThinkingSphinx::Search.new(:include => :betas).first
+    end
+
+    it "should respect complex includes" do
+      Alpha.should_receive(:find) do |type, options|
+        options[:include].should == [:thetas, {:betas => :gammas}]
+        [@alpha_a, @alpha_b]
+      end
+
+      Beta.should_receive(:find) do |type, options|
+        options[:include].should be_nil
+        [@beta_a, @beta_b]
+      end
+
+      ThinkingSphinx::Search.new(:include => [:thetas, {:betas => :gammas}]).first
+    end
+    
+    it "should respect hash includes" do
+      Alpha.should_receive(:find) do |type, options|
+        options[:include].should == {:betas => :gammas}
+        [@alpha_a, @alpha_b]
+      end
+      
+      Beta.should_receive(:find) do |type, options|
+        options[:include].should be_nil
+        [@beta_a, @beta_b]
+      end
+      
+      ThinkingSphinx::Search.new(:include => {:betas => :gammas}).first
+    end
+    
+    it "should respect includes for single class searches" do
+      Alpha.should_receive(:find) do |type, options|
+        options[:include].should == {:betas => :gammas}
+        [@alpha_a, @alpha_b]
+      end
+      
+      ThinkingSphinx::Search.new(
+        :include => {:betas => :gammas},
+        :classes => [Alpha]
+      ).first
+    end
+    
     describe 'query' do
       it "should concatenate arguments with spaces" do
         @client.should_receive(:query) do |query, index, comment|
@@ -274,6 +374,32 @@ describe ThinkingSphinx::Search do
         
         ThinkingSphinx::Search.new(
           'foo@bar.com -foo-bar', :star => /[\w@.-]+/u
+        ).first
+      end
+      
+      it "should ignore multi-field limitations" do
+        @client.should_receive(:query) do |query, index, comment|
+          query.should == '@(foo,bar) *baz*'
+        end
+        
+        ThinkingSphinx::Search.new('@(foo,bar) baz', :star => true).first
+      end
+      
+      it "should ignore multi-field limitations with spaces" do
+        @client.should_receive(:query) do |query, index, comment|
+          query.should == '@(foo bar) *baz*'
+        end
+        
+        ThinkingSphinx::Search.new('@(foo bar) baz', :star => true).first
+      end
+      
+      it "should ignore multi-field limitations in the middle of queries" do
+        @client.should_receive(:query) do |query, index, comment|
+          query.should == '*baz* @foo *bar* @(foo,bar) *baz*'
+        end
+        
+        ThinkingSphinx::Search.new(
+          'baz @foo bar @(foo,bar) baz', :star => true
         ).first
       end
     end
@@ -510,31 +636,6 @@ describe ThinkingSphinx::Search do
         filter.attribute.should == 'sphinx_internal_id'
         filter.exclude?.should be_true
       end
-      
-      describe 'in :conditions' do
-        it "should add as filters for known attributes in :conditions option" do
-          ThinkingSphinx::Search.new('general',
-            :conditions => {:word => 'specific', :lat => 1.5},
-            :classes    => [Alpha]
-          ).first
-          
-          filter = @client.filters.last
-          filter.values.should == [1.5]
-          filter.attribute.should == 'lat'
-          filter.exclude?.should be_false        
-        end
-        
-        it "should not add the filter to the query string" do
-          @client.should_receive(:query) do |query, index, comment|
-            query.should == 'general @word specific'
-          end
-          
-          ThinkingSphinx::Search.new('general',
-            :conditions => {:word => 'specific', :lat => 1.5},
-            :classes    => [Alpha]
-          ).first
-        end
-      end
     end
     
     describe 'sort mode' do
@@ -766,6 +867,36 @@ describe ThinkingSphinx::Search do
       end
     end
     
+    describe ':only option' do
+      it "returns the requested attribute as an array" do
+        ThinkingSphinx::Search.new(:only => :class_crc).first.
+          should == Alpha.to_crc32
+      end
+      
+      it "returns multiple attributes as hashes with values" do
+        ThinkingSphinx::Search.new(
+          :only => [:class_crc, :sphinx_internal_id]
+        ).first.should == {
+          :class_crc          => Alpha.to_crc32,
+          :sphinx_internal_id => @alpha_a.id
+        }
+      end
+      
+      it "handles strings for a single attribute name" do
+        ThinkingSphinx::Search.new(:only => 'class_crc').first.
+          should == Alpha.to_crc32
+      end
+      
+      it "handles strings for multiple attribute names" do
+        ThinkingSphinx::Search.new(
+          :only => ['class_crc', 'sphinx_internal_id']
+        ).first.should == {
+          :class_crc          => Alpha.to_crc32,
+          :sphinx_internal_id => @alpha_a.id
+        }
+      end
+    end
+    
     context 'result objects' do
       describe '#excerpts' do
         before :each do
@@ -783,7 +914,8 @@ describe ThinkingSphinx::Search do
         it "should not add excerpts method if objects already have one" do
           @search.last.excerpts.should_not be_a(ThinkingSphinx::Excerpter)
         end
-      
+        
+        # Fails in Ruby 1.9 (or maybe it's an RSpec update). Not sure why.
         it "should set up the excerpter with the instances and search" do
           [@alpha_a, @beta_b, @alpha_b, @beta_a].each do |object|
             ThinkingSphinx::Excerpter.should_receive(:new).with(@search, object)
@@ -836,6 +968,27 @@ describe ThinkingSphinx::Search do
         it "should return the fields that the bitmask match" do
           search = ThinkingSphinx::Search.new :rank_mode => :fieldmask
           search.first.matching_fields.should == ['one', 'three', 'five']
+        end
+      end
+    end
+    
+    context 'Sphinx errors' do
+      describe '#error?' do
+        before :each do
+          @client.stub! :query => {
+            :error => @warning = "Not good"
+          }
+          # @search.should_receive(:error).and_return(nil)
+        end
+        it "should raise an error" do
+          lambda{
+            ThinkingSphinx::Search.new.first
+          }.should raise_error(ThinkingSphinx::SphinxError)
+        end
+        it "should not raise an error when ignore_errors is true" do
+          lambda{
+            ThinkingSphinx::Search.new(:ignore_errors => true).first
+          }.should_not raise_error(ThinkingSphinx::SphinxError)
         end
       end
     end
@@ -982,10 +1135,11 @@ describe ThinkingSphinx::Search do
       @client.stub! :query => {
         :matches => [{
           :attributes => {
-            'sphinx_internal_id' => @alpha.id,
-            'class_crc'          => Alpha.to_crc32,
-            '@groupby'           => 101,
-            '@count'             => 5
+            'sphinx_internal_id'    => @alpha.id,
+            'sphinx_internal_class' => 'Alpha',
+            'class_crc'             => Alpha.to_crc32,
+            '@groupby'              => 101,
+            '@count'                => 5
           }
         }]
       }
@@ -1019,8 +1173,9 @@ describe ThinkingSphinx::Search do
       @client.stub! :query => {
         :matches => [{
           :attributes => {
-            'sphinx_internal_id' => @alpha.id,
-            'class_crc'          => Alpha.to_crc32
+            'sphinx_internal_id'    => @alpha.id,
+            'sphinx_internal_class' => 'Alpha',
+            'class_crc'             => Alpha.to_crc32
           }, :weight => 12
         }]
       }
@@ -1044,11 +1199,12 @@ describe ThinkingSphinx::Search do
       @client.stub! :query => {
         :matches => [{
           :attributes => {
-            'sphinx_internal_id' => @alpha.id,
-            'class_crc'          => Alpha.to_crc32,
-            '@geodist'           => 101,
-            '@groupby'           => 102,
-            '@count'             => 103
+            'sphinx_internal_id'    => @alpha.id,
+            'sphinx_internal_class' => 'Alpha',
+            'class_crc'             => Alpha.to_crc32,
+            '@geodist'              => 101,
+            '@groupby'              => 102,
+            '@count'                => 103
           }, :weight => 12
         }]
       }

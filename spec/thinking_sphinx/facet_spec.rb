@@ -311,6 +311,18 @@ describe ThinkingSphinx::Facet do
         ThinkingSphinx::Facet.new(field).value(friendship, {'name_facet' => 'buried'.to_crc32}).
           should == 'buried'
       end
+      
+      it "should not error with multi-level association values containing a nil value" do
+        person      = Person.find(:first)
+        tag         = person.tags.build(:name => nil)
+        tag         = person.tags.build(:name => "buried")
+        friendship  = Friendship.new(:person => person)
+        
+        field  = ThinkingSphinx::Field.new(
+          @source, ThinkingSphinx::Index::FauxColumn.new(:person, :tags, :name)
+        )
+        lambda{ThinkingSphinx::Facet.new(field).value(friendship, {'name_facet' => 'buried'.to_crc32})}.should_not raise_error
+      end
     end
     
     describe 'for float attributes' do
@@ -327,6 +339,20 @@ describe ThinkingSphinx::Facet do
         alpha = Alpha.new(:cost => 10.5)
       
         @facet.value(alpha, {'cost' => 1093140480}).should == 10.5
+      end
+    end
+    
+    context 'manual value source' do
+      let(:index)  { ThinkingSphinx::Index.new(Alpha) }
+      let(:source) { ThinkingSphinx::Source.new(index) }
+      let(:column) { ThinkingSphinx::Index::FauxColumn.new('LOWER(name)') }
+      let(:field)  { ThinkingSphinx::Field.new(source, column) }
+      let(:facet)  { ThinkingSphinx::Facet.new(field, :name) }
+      
+      it "should use the given value source to figure out the value" do
+        alpha = Alpha.new(:name => 'Foo')
+        
+        facet.value(alpha, {'foo_facet' => 'foo'.to_crc32}).should == 'Foo'
       end
     end
   end

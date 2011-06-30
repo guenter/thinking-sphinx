@@ -12,7 +12,7 @@ module Riddle
     end
     
     def sphinx_version
-      `#{indexer} 2>&1`[/^Sphinx (\d+\.\d+(\.\d+|\-beta))/, 1]
+      `#{indexer} 2>&1`[/^Sphinx (\d+\.\d+(\.\d+|(?:-dev|(\-id64)?\-beta)))/, 1]
     rescue
       nil
     end
@@ -28,6 +28,7 @@ module Riddle
     
     def start
       return if running?
+      check_for_configuration_file
       
       cmd = "#{searchd} --pidfile --config \"#{@path}\""
       
@@ -46,9 +47,17 @@ module Riddle
     
     def stop
       return true unless running?
-      Process.kill('SIGTERM', pid.to_i)
-    rescue Errno::EINVAL
-      Process.kill('SIGKILL', pid.to_i)
+      check_for_configuration_file
+      
+      stop_flag = 'stopwait'
+      stop_flag = 'stop' if Riddle.loaded_version.split('.').first == '0'
+      cmd = %(#{searchd} --pidfile --config "#{@path}" --#{stop_flag})
+      
+      if RUBY_PLATFORM =~ /mswin/
+        system("start /B #{cmd} 1> NUL 2>&1")
+      else
+        `#{cmd}`
+      end
     ensure
       return !running?
     end
@@ -75,6 +84,11 @@ module Riddle
     
     def searchd
       "#{bin_path}#{searchd_binary_name}"
+    end
+    
+    def check_for_configuration_file
+      return if File.exist?(@path)
+      raise "Configuration file '#{@path}' does not exist"
     end
   end
 end

@@ -1,18 +1,20 @@
 require 'fileutils'
+require 'timeout'
 
 namespace :thinking_sphinx do
   task :app_env do
     if defined?(RAILS_ROOT)
       Rake::Task[:environment].invoke
-      
       if defined?(Rails.configuration)
         Rails.configuration.cache_classes = false
       else
         Rails::Initializer.run { |config| config.cache_classes = false }
       end
+    elsif defined?(Merb)
+      Rake::Task[:merb_env].invoke
+    elsif defined?(Sinatra)
+      Sinatra::Application.environment = ENV['RACK_ENV']
     end
-    
-    Rake::Task[:merb_env].invoke    if defined?(Merb)
   end
   
   desc "Output the current Thinking Sphinx version"
@@ -52,6 +54,12 @@ namespace :thinking_sphinx do
       config = ThinkingSphinx::Configuration.instance
       pid    = sphinx_pid
       config.controller.stop
+      
+      # Ensure searchd is stopped, but don't try too hard
+      Timeout.timeout(config.stop_timeout) do
+        sleep(1) until config.controller.stop
+      end
+      
       puts "Stopped search daemon (pid #{pid})."
     end
   end
@@ -82,7 +90,9 @@ namespace :thinking_sphinx do
   task :reindex => :app_env do
     config = ThinkingSphinx::Configuration.instance
     FileUtils.mkdir_p config.searchd_file_path
-    puts config.controller.index
+    output = config.controller.index
+    puts output
+    config.touch_reindex_file(output)
   end
   
   desc "Stop Sphinx (if it's running), rebuild the indexes, and start Sphinx"

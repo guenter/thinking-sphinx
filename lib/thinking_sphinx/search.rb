@@ -7,12 +7,12 @@ module ThinkingSphinx
   # search_for_ids methods will do the job in exactly the same manner when
   # called from a model.
   # 
-  class Search
+  class Search < Array
     CoreMethods = %w( == class class_eval extend frozen? id instance_eval
       instance_of? instance_values instance_variable_defined?
       instance_variable_get instance_variable_set instance_variables is_a?
-      kind_of? member? method methods nil? object_id respond_to? send should
-      type )
+      kind_of? member? method methods nil? object_id respond_to?
+      respond_to_missing? send should type )
     SafeMethods = %w( partition private_methods protected_methods
       public_methods send class )
     
@@ -22,39 +22,39 @@ module ThinkingSphinx
       undef_method method
     }
     
-    HashOptions   = [:conditions, :with, :without, :with_all]
+    HashOptions   = [:conditions, :with, :without, :with_all, :without_any]
     ArrayOptions  = [:classes, :without_ids]
     
     attr_reader :args, :options
     
     # Deprecated. Use ThinkingSphinx.search
     def self.search(*args)
-      log 'ThinkingSphinx::Search.search is deprecated. Please use ThinkingSphinx.search instead.'
-      ThinkingSphinx.search *args
+      warn 'ThinkingSphinx::Search.search is deprecated. Please use ThinkingSphinx.search instead.'
+      ThinkingSphinx.search(*args)
     end
     
     # Deprecated. Use ThinkingSphinx.search_for_ids
     def self.search_for_ids(*args)
-      log 'ThinkingSphinx::Search.search_for_ids is deprecated. Please use ThinkingSphinx.search_for_ids instead.'
-      ThinkingSphinx.search_for_ids *args
+      warn 'ThinkingSphinx::Search.search_for_ids is deprecated. Please use ThinkingSphinx.search_for_ids instead.'
+      ThinkingSphinx.search_for_ids(*args)
     end
     
     # Deprecated. Use ThinkingSphinx.search_for_ids
     def self.search_for_id(*args)
-      log 'ThinkingSphinx::Search.search_for_id is deprecated. Please use ThinkingSphinx.search_for_id instead.'
-      ThinkingSphinx.search_for_id *args
+      warn 'ThinkingSphinx::Search.search_for_id is deprecated. Please use ThinkingSphinx.search_for_id instead.'
+      ThinkingSphinx.search_for_id(*args)
     end
     
     # Deprecated. Use ThinkingSphinx.count
     def self.count(*args)
-      log 'ThinkingSphinx::Search.count is deprecated. Please use ThinkingSphinx.count instead.'
-      ThinkingSphinx.count *args
+      warn 'ThinkingSphinx::Search.count is deprecated. Please use ThinkingSphinx.count instead.'
+      ThinkingSphinx.count(*args)
     end
     
     # Deprecated. Use ThinkingSphinx.facets
     def self.facets(*args)
-      log 'ThinkingSphinx::Search.facets is deprecated. Please use ThinkingSphinx.facets instead.'
-      ThinkingSphinx.facets *args
+      warn 'ThinkingSphinx::Search.facets is deprecated. Please use ThinkingSphinx.facets instead.'
+      ThinkingSphinx.facets(*args)
     end
     
     def self.bundle_searches(enum = nil)
@@ -111,6 +111,40 @@ module ThinkingSphinx
       !!@populated
     end
     
+    # Indication of whether the request resulted in an error from Sphinx.
+    # 
+    # @return [Boolean] true if Sphinx reports query error
+    # 
+    def error?
+      !!error
+    end
+    
+    # The Sphinx-reported error, if any.
+    # 
+    # @return [String, nil]
+    # 
+    def error
+      populate
+      @results[:error]
+    end
+    
+    # Indication of whether the request resulted in a warning from Sphinx.
+    # 
+    # @return [Boolean] true if Sphinx reports query warning
+    # 
+    def warning?
+      !!warning
+    end
+    
+    # The Sphinx-reported warning, if any.
+    # 
+    # @return [String, nil]
+    # 
+    def warning
+      populate
+      @results[:warning]
+    end
+    
     # The query result hash from Riddle.
     # 
     # @return [Hash] Raw Sphinx results
@@ -125,7 +159,7 @@ module ThinkingSphinx
         add_scope(method, *args, &block)
         return self
       elsif method == :search_count
-        merge_search one_class.search(*args)
+        merge_search one_class.search(*args), self.args, options
         return scoped_count
       elsif method.to_s[/^each_with_.*/].nil? && !@array.respond_to?(method)
         super
@@ -159,6 +193,16 @@ module ThinkingSphinx
       @options[:page].blank? ? 1 : @options[:page].to_i
     end
     
+    def first_page?
+      current_page == 1
+    end
+    
+    # Kaminari support
+    def page(page_number)
+      @options[:page] = page_number
+      self
+    end
+    
     # The next page number of the result set. If there are no more pages
     # available, nil is returned.
     # 
@@ -166,6 +210,10 @@ module ThinkingSphinx
     # 
     def next_page
       current_page >= total_pages ? nil : current_page + 1
+    end
+    
+    def next_page?
+      !next_page.nil?
     end
     
     # The previous page number of the result set. If this is the first page,
@@ -187,6 +235,14 @@ module ThinkingSphinx
       @options[:limit] ||= 20
       @options[:limit].to_i
     end
+    # Kaminari support
+    alias_method :limit_value, :per_page
+    
+    # Kaminari support
+    def per(limit)
+      @options[:limit] = limit
+      self
+    end
     
     # The total number of pages available if the results are paginated.
     # 
@@ -198,8 +254,9 @@ module ThinkingSphinx
       
       @total_pages ||= (@results[:total] / per_page.to_f).ceil
     end
-    # Compatibility with older versions of will_paginate
+    # Compatibility with kaminari and older versions of will_paginate
     alias_method :page_count, :total_pages
+    alias_method :num_pages,  :total_pages
     
     # Query time taken
     # 
@@ -272,16 +329,35 @@ module ThinkingSphinx
       
       populate
       client.excerpts(
-        :docs   => [string],
-        :words  => results[:words].keys.join(' '),
-        :index  => options[:index] || "#{model.source_of_sphinx_index.sphinx_name}_core"
+        {
+          :docs   => [string.to_s],
+          :words  => results[:words].keys.join(' '),
+          :index  => options[:index] || "#{model.core_index_names.first}"
+        }.merge(options[:excerpt_options] || {})
       ).first
     end
     
     def search(*args)
       args << args.extract_options!.merge(:ignore_default => true)
-      merge_search ThinkingSphinx::Search.new(*args)
+      merge_search ThinkingSphinx::Search.new(*args), self.args, options
       self
+    end
+    
+    def search_for_ids(*args)
+      args << args.extract_options!.merge(
+        :ignore_default => true,
+        :ids_only       => true
+      )
+      merge_search ThinkingSphinx::Search.new(*args), self.args, options
+      self
+    end
+    
+    def facets(*args)
+      options = args.extract_options!
+      merge_search self, args, options
+      args << options
+      
+      ThinkingSphinx::FacetSearch.new(*args)
     end
     
     def client
@@ -301,16 +377,7 @@ module ThinkingSphinx
       @populated = true
       @results   = results
       
-      if options[:ids_only]
-        replace @results[:matches].collect { |match|
-          match[:attributes]["sphinx_internal_id"]
-        }
-      else
-        replace instances_from_matches
-        add_excerpter
-        add_sphinx_attributes
-        add_matching_fields if client.rank_mode == :fieldmask
-      end
+      compose_results
     end
     
     private
@@ -331,22 +398,55 @@ module ThinkingSphinx
           }
           log "Found #{@results[:total_found]} results", :debug,
             "Sphinx (#{sprintf("%f", runtime)}s)"
+          
+          log "Sphinx Daemon returned warning: #{warning}", :error if warning?
+          
+          if error?
+            log "Sphinx Daemon returned error: #{error}", :error
+            raise SphinxError.new(error, @results) unless options[:ignore_errors]
+          end
         rescue Errno::ECONNREFUSED => err
           raise ThinkingSphinx::ConnectionError,
             'Connection to Sphinx Daemon (searchd) failed.'
         end
-      
-        if options[:ids_only]
-          replace @results[:matches].collect { |match|
-            match[:attributes]["sphinx_internal_id"]
-          }
-        else
-          replace instances_from_matches
-          add_excerpter
-          add_sphinx_attributes
-          add_matching_fields if client.rank_mode == :fieldmask
-        end
+        
+        compose_results
       end
+    end
+
+    def compose_results
+      if options[:ids_only]
+        compose_ids_results
+      elsif options[:only]
+        compose_only_results
+      else
+        replace instances_from_matches
+        add_excerpter
+        add_sphinx_attributes
+        add_matching_fields if client.rank_mode == :fieldmask
+      end
+    end
+    
+    def compose_ids_results
+      replace @results[:matches].collect { |match|
+        match[:attributes]['sphinx_internal_id']
+      }
+    end
+    
+    def compose_only_results
+      replace @results[:matches].collect { |match|
+        case only = options[:only]
+        when String, Symbol
+          match[:attributes][only.to_s]
+        when Array
+          only.inject({}) do |hash, attribute|
+            hash[attribute.to_sym] = match[:attributes][attribute.to_s]
+            hash
+          end
+        else
+          raise "Unexpected object for :only argument. String or Array is expected, #{only.class} was received."
+        end
+      }
     end
     
     def add_excerpter
@@ -382,17 +482,27 @@ module ThinkingSphinx
     
     def match_hash(object)
       @results[:matches].detect { |match|
+        class_crc = object.class.name
+        class_crc = object.class.to_crc32 if Riddle.loaded_version.to_i < 2
+        
         match[:attributes]['sphinx_internal_id'] == object.
           primary_key_for_sphinx &&
-        match[:attributes]['class_crc'] == object.class.to_crc32
+        match[:attributes][crc_attribute] == class_crc
       }
     end
     
     def self.log(message, method = :debug, identifier = 'Sphinx')
       return if ::ActiveRecord::Base.logger.nil?
-      identifier_color, message_color = "4;32;1", "0" # 0;1 = Bold
-      info = "  \e[#{identifier_color}m#{identifier}\e[0m   "
-      info << "\e[#{message_color}m#{message}\e[0m"
+      
+      info = ''
+      if ::ActiveRecord::Base.colorize_logging
+        identifier_color, message_color = "4;32;1", "0" # 0;1 = Bold
+        info << "  \e[#{identifier_color}m#{identifier}\e[0m   "
+        info << "\e[#{message_color}m#{message}\e[0m"
+      else
+        info = "#{identifier}   #{message}"
+      end
+      
       ::ActiveRecord::Base.logger.send method, info
     end
     
@@ -401,8 +511,10 @@ module ThinkingSphinx
     end
     
     def prepare(client)
-      index_options = one_class ?
-        one_class.sphinx_indexes.first.local_options : {}
+      index_options = {}
+      if one_class && one_class.sphinx_indexes && one_class.sphinx_indexes.first
+        index_options = one_class.sphinx_indexes.first.local_options
+      end
       
       [
         :max_matches, :group_by, :group_function, :group_clause,
@@ -475,12 +587,7 @@ module ThinkingSphinx
     def conditions_as_query
       return '' if @options[:conditions].blank?
       
-      # Soon to be deprecated.
-      keys = @options[:conditions].keys.reject { |key|
-        attributes.include?(key.to_sym)
-      }
-      
-      ' ' + keys.collect { |key|
+      ' ' + @options[:conditions].keys.collect { |key|
         "@#{key} #{options[:conditions][key]}"
       }.join(' ')
     end
@@ -491,7 +598,8 @@ module ThinkingSphinx
       query.gsub(/("#{token}(.*?#{token})?"|(?![!-])#{token})/u) do
         pre, proper, post = $`, $&, $'
         # E.g. "@foo", "/2", "~3", but not as part of a token
-        is_operator = pre.match(%r{(\W|^)[@~/]\Z})
+        is_operator = pre.match(%r{(\W|^)[@~/]\Z}) ||
+                      pre.match(%r{(\W|^)@\([^\)]*$})
         # E.g. "foo bar", with quotes
         is_quote    = proper.starts_with?('"') && proper.ends_with?('"')
         has_star    = pre.ends_with?("*") || post.starts_with?("*")
@@ -534,7 +642,7 @@ module ThinkingSphinx
     def sort_by
       case @sort_by = (options[:sort_by] || options[:order])
       when String
-        sorted_fields_to_attributes(@sort_by)
+        sorted_fields_to_attributes(@sort_by.clone)
       when Symbol
         field_names.include?(@sort_by) ?
           @sort_by.to_s.concat('_sort') : @sort_by.to_s
@@ -605,24 +713,8 @@ module ThinkingSphinx
       filters
     end
     
-    def condition_filters
-      (options[:conditions] || {}).collect { |attrib, value|
-        if attributes.include?(attrib.to_sym)
-          puts <<-MSG
-Deprecation Warning: filters on attributes should be done using the :with
-option, not :conditions. For example:
-  :with => {:#{attrib} => #{value.inspect}}
-MSG
-          Riddle::Client::Filter.new attrib.to_s, filter_value(value)
-        else
-          nil
-        end
-      }.compact
-    end
-    
     def filters
       internal_filters +
-      condition_filters +
       (options[:with] || {}).collect { |attrib, value|
         Riddle::Client::Filter.new attrib.to_s, filter_value(value)
       } +
@@ -632,6 +724,11 @@ MSG
       (options[:with_all] || {}).collect { |attrib, values|
         Array(values).collect { |value|
           Riddle::Client::Filter.new attrib.to_s, filter_value(value)
+        }
+      }.flatten +
+      (options[:without_any] || {}).collect { |attrib, values|
+        Array(values).collect { |value|
+          Riddle::Client::Filter.new attrib.to_s, filter_value(value), true
         }
       }.flatten
     end
@@ -710,6 +807,45 @@ MSG
       end
     end
     
+    def include_for_class(klass)
+      includes = options[:include] || klass.sphinx_index_options[:include]
+      
+      case includes
+      when NilClass
+        nil
+      when Array
+        include_from_array includes, klass
+      when Symbol
+        klass.reflections[includes].nil? ? nil : includes
+      when Hash
+        include_from_hash includes, klass
+      else
+        includes
+      end
+    end
+
+    def include_from_array(array, klass)
+      scoped_array = []
+      array.each do |value|
+        case value
+        when Hash
+          scoped_hash = include_from_hash(value, klass)
+          scoped_array << scoped_hash unless scoped_hash.nil?
+        else
+          scoped_array << value unless klass.reflections[value].nil?
+        end
+      end
+      scoped_array.empty? ? nil : scoped_array
+    end
+    
+    def include_from_hash(hash, klass)
+      scoped_hash = {}
+      hash.keys.each do |key|
+        scoped_hash[key] = hash[key] unless klass.reflections[key].nil?
+      end
+      scoped_hash.empty? ? nil : scoped_hash
+    end
+    
     def instances_from_class(klass, matches)
       index_options = klass.sphinx_index_options
 
@@ -718,7 +854,7 @@ MSG
         :all,
         :joins      => options[:joins],
         :conditions => {klass.primary_key_for_sphinx.to_sym => ids},
-        :include    => (options[:include] || index_options[:include]),
+        :include    => include_for_class(klass),
         :select     => (options[:select]  || index_options[:select]),
         :order      => (options[:sql_order] || index_options[:sql_order])
       ) : []
@@ -749,7 +885,7 @@ MSG
       return single_class_results if one_class
       
       groups = results[:matches].group_by { |match|
-        match[:attributes]["class_crc"]
+        match[:attributes][crc_attribute]
       }
       groups.each do |crc, group|
         group.replace(
@@ -759,7 +895,7 @@ MSG
       
       results[:matches].collect do |match|
         groups.detect { |crc, group|
-          crc == match[:attributes]["class_crc"]
+          crc == match[:attributes][crc_attribute]
         }[1].compact.detect { |obj|
           obj.primary_key_for_sphinx == match[:attributes]["sphinx_internal_id"]
         }
@@ -771,7 +907,11 @@ MSG
     end
     
     def class_from_crc(crc)
-      config.models_by_crc[crc].constantize
+      if Riddle.loaded_version.to_i < 2
+        config.models_by_crc[crc].constantize
+      else
+        crc.constantize
+      end
     end
     
     def each_with_attribute(attribute, &block)
@@ -794,10 +934,10 @@ MSG
     
     def add_scope(method, *args, &block)
       method = "#{method}_without_default".to_sym
-      merge_search one_class.send(method, *args, &block)
+      merge_search one_class.send(method, *args, &block), self.args, options
     end
     
-    def merge_search(search)
+    def merge_search(search, args, options)
       search.args.each { |arg| args << arg }
       
       search.options.keys.each do |key|
@@ -815,7 +955,7 @@ MSG
     end
     
     def scoped_count
-      return self.total_entries if @options[:ids_only]
+      return self.total_entries if(@options[:ids_only] || @options[:only])
       
       @options[:ids_only] = true
       results_count = self.total_entries
@@ -823,6 +963,10 @@ MSG
       @populated = false
       
       results_count
+    end
+    
+    def crc_attribute
+      Riddle.loaded_version.to_i < 2 ? 'class_crc' : 'sphinx_internal_class'
     end
   end
 end
