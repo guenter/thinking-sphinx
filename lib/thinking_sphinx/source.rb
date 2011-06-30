@@ -20,8 +20,13 @@ module ThinkingSphinx
       @groupings    = []
       @options      = options
       @associations = {}
-      @database_configuration = @model.connection.
-        instance_variable_get(:@config).clone
+
+      if @model.connection.class.name == "MultiDb::ConnectionProxy"
+        connection = @model.connection.master.connection
+      else
+        connection = @model.connection
+      end
+      @database_configuration = connection.instance_variable_get(:@config).clone
       
       @base = ::ActiveRecord::Associations::ClassMethods::JoinDependency.new(
         @model, [], nil
